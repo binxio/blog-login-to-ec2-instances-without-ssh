@@ -15,8 +15,10 @@ def handler(event, context):
     if 'ServiceToken' in kwargs:
         del kwargs['ServiceToken']
 
-    if kwargs.get( 'DocumentFormat', 'JSON') and isinstance(kwargs.get('Content'), dict):
+    if kwargs.get('DocumentFormat', 'JSON') and isinstance(kwargs.get('Content'), dict):
         kwargs['Content'] = json.dumps(kwargs['Content'])
+
+    logging.info('content => %s', kwargs['Content'])
 
     try:
         if event['RequestType'] == 'Create':
@@ -24,7 +26,10 @@ def handler(event, context):
         elif event['RequestType'] == 'Update':
             kwargs.pop('DocumentType')
             kwargs['DocumentVersion'] = '$LATEST'
-            response = ssm.update_document(**kwargs)
+            try:
+                response = ssm.update_document(**kwargs)
+            except ssm.exceptions.DuplicateDocumentContent:
+                response = ssm.get_document(Name=kwargs['Name'])
         elif event['RequestType'] == 'Delete':
             response = ssm.delete_document(Name=kwargs.get('Name'))
 
@@ -35,4 +40,3 @@ def handler(event, context):
             return cfnresponse.send(event, context, cfnresponse.FAILED, {}, kwargs.get('Name'))
         else:
             return cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, kwargs.get('Name'))
-

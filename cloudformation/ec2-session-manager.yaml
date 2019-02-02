@@ -63,6 +63,12 @@ Resources:
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
 
+  SessionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: ssm-sessions
+      RetentionInDays: 1
+
   SessionManagerPreferences:
     Type: Custom::SSMDocument
     Properties:
@@ -72,9 +78,13 @@ Resources:
         schemaVersion: '1.0'
         description: Session Manager Preferences
         sessionType: Standard_Stream
-        inputs:
-          cloudWatchLogGroupName: ssm-sessions
-          cloudWatchEncryptionEnabled: true
+        inputs: !Sub |
+          { "s3BucketName": "", 
+            "s3KeyPrefix": "", 
+            "s3EncryptionEnabled": true,
+            "cloudWatchLogGroupName": "${SessionLogGroup}",
+            "cloudWatchEncryptionEnabled": false 
+          }
       ServiceToken: !GetAtt SSMDocumentProvider.Arn
 
   SSMDocumentProvider:
@@ -107,13 +117,18 @@ Resources:
               if kwargs.get( 'DocumentFormat', 'JSON') and isinstance(kwargs.get('Content'), dict):
                   kwargs['Content'] = json.dumps(kwargs['Content'])
 
+              logging.info('content => %s', kwargs['Content'])
+
               try:
                   if event['RequestType'] == 'Create':
                       response = ssm.create_document(**kwargs)
                   elif event['RequestType'] == 'Update':
                       kwargs.pop('DocumentType')
                       kwargs['DocumentVersion'] = '$LATEST'
-                      response = ssm.update_document(**kwargs)
+                      try:
+                          response = ssm.update_document(**kwargs)
+                      except ssm.exceptions.DuplicateDocumentContent:
+                          response = ssm.get_document(Name=kwargs['Name'])
                   elif event['RequestType'] == 'Delete':
                       response = ssm.delete_document(Name=kwargs.get('Name'))
 
