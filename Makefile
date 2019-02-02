@@ -23,8 +23,8 @@ demo: cloudformation/ec2-session-manager.yaml
 				ParameterKey=Subnets,ParameterValue=\"$$SUBNET_IDS\" \
 				ParameterKey=SecurityGroups,ParameterValue=$$SG_ID; \
 	aws cloudformation wait stack-$$CFN_COMMAND-complete --stack-name $(NAME);
-	@aws cloudformation describe-stacks --stack-name $(NAME) --output text \
-		--query 'Stacks[0].Outputs[?OutputKey==`StartSessionCommand`].OutputValue';
+	@aws cloudformation describe-stacks --stack-name $(NAME) \
+		--query 'Stacks[0].Outputs[*].OutputValue';
 
 delete-demo: 
 	aws cloudformation delete-stack --stack-name $(NAME)
