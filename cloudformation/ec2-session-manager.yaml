@@ -22,23 +22,23 @@ Parameters:
   SecurityGroups:
     Type: List<AWS::EC2::SecurityGroup::Id>
   AmiId:
-    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-gp2'
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-gp2
   InstanceType:
     Type: String
     Default: t3.nano
 
 Resources:
   Instance:
-    Type: 'AWS::EC2::Instance'
+    Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref AmiId
       InstanceType: !Ref InstanceType
-      SubnetId: !Select [ 0, !Ref Subnets ]
+      SubnetId: !Select [0, !Ref Subnets]
       SecurityGroupIds: !Ref SecurityGroups
       Tags:
-        - Key: Name
-          Value: blog-aws-session-manager
+      - Key: Name
+        Value: blog-aws-session-manager
       IamInstanceProfile: !Ref IamInstanceProfile
 
   IamInstanceProfile:
@@ -46,43 +46,84 @@ Resources:
     Properties:
       Path: /
       Roles:
-        - !Ref 'InstanceRole'
+      - !Ref InstanceRole
 
   InstanceRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
         Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - ec2.amazonaws.com
-            Action:
-              - sts:AssumeRole
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
       Path: /
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
 
   SessionManagerPreferences:
     Type: Custom::SSMDocument
     Properties:
       Name: SSM-SessionManagerRunShell
       DocumentType: Session
-      Content: 
+      Content:
         schemaVersion: '1.0'
         description: Session Manager Preferences
         sessionType: Standard_Stream
         inputs:
           cloudWatchLogGroupName: ssm-sessions
           cloudWatchEncryptionEnabled: true
-      ServiceToken: !GetAtt AWSSSMDocumentProvider.Arn
+      ServiceToken: !GetAtt SSMDocumentProvider.Arn
 
   SSMDocumentProvider:
     Type: AWS::Lambda::Function
-      Handler: "index.handler"
+    Properties:
+      Handler: index.handler
       Timeout: 30
       Role: !GetAtt 'SSMDocumentProviderRole.Arn'
       Runtime: python3.6
+
+      Code:
+        ZipFile: |+
+          import json
+          import boto3
+          import logging
+          import cfnresponse
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          ssm = boto3.client('ssm')
+
+
+          def handler(event, context):
+              kwargs = event['ResourceProperties'].copy()
+
+              if 'ServiceToken' in kwargs:
+                  del kwargs['ServiceToken']
+
+              if kwargs.get( 'DocumentFormat', 'JSON') and isinstance(kwargs.get('Content'), dict):
+                  kwargs['Content'] = json.dumps(kwargs['Content'])
+
+              try:
+                  if event['RequestType'] == 'Create':
+                      response = ssm.create_document(**kwargs)
+                  elif event['RequestType'] == 'Update':
+                      kwargs.pop('DocumentType')
+                      kwargs['DocumentVersion'] = '$LATEST'
+                      response = ssm.update_document(**kwargs)
+                  elif event['RequestType'] == 'Delete':
+                      response = ssm.delete_document(Name=kwargs.get('Name'))
+
+                  return cfnresponse.send(event, context, cfnresponse.SUCCESS, response.get('DocumentInformation', {}), kwargs.get('Name'))
+              except Exception as e:
+                  logger.error('%s', e)
+                  if event.get('RequestType') != 'Delete':
+                      return cfnresponse.send(event, context, cfnresponse.FAILED, {}, kwargs.get('Name'))
+                  else:
+                      return cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, kwargs.get('Name'))
 
   SSMDocumentProviderRole:
     Type: AWS::IAM::Role
@@ -90,33 +131,32 @@ Resources:
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
-          -
-            Effect: Allow
-            Principal:
-              Service:
-                - lambda.amazonaws.com
-            Action:
-              - sts:AssumeRole
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
       Path: /
       Policies:
-        - PolicyName: 'SSMDocumentProvider'
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource:
-                  - '*'
-              - Effect: Allow
-                Action:
-                  - ssm:CreateDocument
-                  - ssm:UpdateDocument
-                  - ssm:DeleteDocument
-                Resource:
-                  - '*'
+      - PolicyName: SSMDocumentProvider
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource:
+            - '*'
+          - Effect: Allow
+            Action:
+            - ssm:CreateDocument
+            - ssm:UpdateDocument
+            - ssm:DeleteDocument
+            Resource:
+            - '*'
 
 Outputs:
   StartSessionCommand:

@@ -1,7 +1,7 @@
 NAME=ec2-session-manager
 
 
-create-demo: 
+demo: cloudformation/ec2-session-manager.yaml
 	@if aws cloudformation get-template-summary --stack-name $(NAME) >/dev/null 2>&1 ; then \
 		export CFN_COMMAND=update; export CFN_TIMEOUT="" ;\
 	else \
@@ -29,3 +29,8 @@ create-demo:
 delete-demo: 
 	aws cloudformation delete-stack --stack-name $(NAME)
 	aws cloudformation wait stack-delete-complete --stack-name $(NAME);
+
+cloudformation/ec2-session-manager.yaml: ssm_document_provider/ssm_document_provider.py
+	aws-cfn-update lambda-inline-code --resource SSMDocumentProvider \
+		--file ./ssm_document_provider/ssm_document_provider.py \
+		cloudformation/
