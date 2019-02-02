@@ -15,9 +15,6 @@ def handler(event, context):
     if 'ServiceToken' in kwargs:
         del kwargs['ServiceToken']
 
-    if kwargs.get('DocumentFormat', 'JSON') and isinstance(kwargs.get('Content'), dict):
-        kwargs['Content'] = json.dumps(kwargs['Content'])
-
     logging.info('content => %s', kwargs['Content'])
 
     try:

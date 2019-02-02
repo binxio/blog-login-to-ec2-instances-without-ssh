@@ -66,25 +66,36 @@ Resources:
   SessionLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: ssm-sessions
       RetentionInDays: 1
+
+  SessionLogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      LifecycleConfiguration:
+        Rules:
+          - Id: StandardRule
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+            ExpirationInDays: 1
 
   SessionManagerPreferences:
     Type: Custom::SSMDocument
     Properties:
       Name: SSM-SessionManagerRunShell
       DocumentType: Session
-      Content:
-        schemaVersion: '1.0'
-        description: Session Manager Preferences
-        sessionType: Standard_Stream
-        inputs: !Sub |
-          { "s3BucketName": "", 
+      Content: !Sub >
+        { "schemaVersion": "1.0",
+          "description": "Session Manager Preferences",
+          "sessionType": "Standard_Stream",
+          "inputs": { 
+            "s3BucketName": "${SessionLogBucket}", 
             "s3KeyPrefix": "", 
-            "s3EncryptionEnabled": true,
+            "s3EncryptionEnabled": false,
             "cloudWatchLogGroupName": "${SessionLogGroup}",
             "cloudWatchEncryptionEnabled": false 
           }
+        }
       ServiceToken: !GetAtt SSMDocumentProvider.Arn
 
   SSMDocumentProvider:
@@ -176,3 +187,7 @@ Resources:
 Outputs:
   StartSessionCommand:
     Value: !Sub 'aws ssm start-session --target ${Instance}'
+  CopySessionLogBucketCommand:
+    Value: !Sub 'aws s3 cp s3://${SessionLogBucket}/$SESSION_ID.log -'
+  CheckCloudWatchLogCommand:
+    Value: !Sub 'aws logs get-log-events --log-group-name ${SessionLogGroup} --log-stream-name $SESSION_ID'
