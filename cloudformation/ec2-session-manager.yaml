@@ -82,7 +82,7 @@ Resources:
   SessionManagerPreferences:
     Type: Custom::SSMDocument
     Properties:
-      Name: SSM-SessionManagerRunShell
+      Name: !Join ['-', [!Ref 'AWS::StackName', 'SSM-SessionManagerRunShell']]
       DocumentType: Session
       Content: !Sub >
         { "schemaVersion": "1.0",
